@@ -137,15 +137,35 @@ module AsciiPress
       @generate_tags = options[:generate_tags]
       @options = options
 
-      all_pages = find_all_posts
+      all_pages = find_all(@post_type)
       @all_pages_by_slug = all_pages.index_by { |post| post["slug"] }
       log :info, "Got #{@all_pages_by_slug.size} pages from the database"
+
+      if @generate_tags
+        all_tags = find_all("tags")
+        @all_tags_by_name = all_tags.index_by { |tag| tag["name"].downcase }
+        log :info, "Got #{@all_tags_by_name.size} tags from the database"
+      end
+
     end
 
     def sync(adoc_file_paths, custom_fields = {})
+      synced_post_names = []
+
       adoc_file_paths.each do |adoc_file_path|
-        sync_file_path(adoc_file_path, custom_fields)
+        synced_post_names << sync_file_path(adoc_file_path, custom_fields)
       end
+
+      if @delete_not_found
+        (@all_pages_by_slug.keys - synced_post_names).each do |post_name_to_delete|
+          post_id = @all_pages_by_slug[post_name_to_delete]['post_id']
+
+          log :info, "Deleting missing post_name: #{post_name_to_delete} (post ##{post_id})"
+
+          # send_message(:deletePost, blog_id: @hostname, post_id: post_id)
+        end
+      end
+
     end
 
     private
@@ -175,7 +195,7 @@ module AsciiPress
                   meta: custom_fields_array
                 }
 
-      content[:tags] = {post_tag: rendering.tags} if @generate_tags
+      content[:tags] = rendering.tags.map { |slug| @all_tags_by_name[slug.downcase]["id"] } if @generate_tags
 
       user_password = "#{@username}:#{@password}"
       headers = {:Authorization => "Basic #{Base64.encode64(user_password)}"}
@@ -192,27 +212,29 @@ module AsciiPress
 
         log :info, "Editing Post ##{post_id} on _#{@hostname}_ custom-field #{content[:meta].inspect}"
 
-        RestClient.post "#{@hostname}/wp-json/wp/v2/#{@post_type}/#{post_id}", content, headers
+        uri = "#{@hostname}/wp-json/wp/v2/#{@post_type}/#{post_id}"
+        RestClient.post uri, content, headers
       else
         log :info, "Making a new post for '#{title}' on _#{@hostname}_"
 
         RestClient.post "#{@hostname}/wp-json/wp/v2/#{@post_type}", content, headers
       end
+
+      slug
     end
 
     def log(level, message)
         @logger.send(level, "WORDPRESS: #{message}")
     end
 
-    def find_all_posts
+    def find_all(resource)
       all_pages = []
 
       page = 1
       per_page = 100
       while true
-        response =  RestClient.get "#{@hostname}/wp-json/wp/v2/#{@post_type}?per_page=#{per_page}&page=#{page}"
+        response =  RestClient.get "#{@hostname}/wp-json/wp/v2/#{resource}?per_page=#{per_page}&page=#{page}"
         total_pages = response.headers[:x_wp_totalpages].to_i
-
         all_pages = all_pages + JSON.parse(response.body)
 
         if total_pages <= page
@@ -222,6 +244,7 @@ module AsciiPress
         end
       end
     end
+
   end
 
   class WordPressSyncer
@@ -270,8 +293,8 @@ module AsciiPress
 
           send_message(:deletePost, blog_id: @hostname, post_id: post_id)
         end
-
       end
+
     end
 
     private
