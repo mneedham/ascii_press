@@ -185,20 +185,33 @@ module AsciiPress
 
       log :info, "Syncing to WordPress: #{title} (slug: #{slug})"
 
-      custom_fields_array = {}.merge('adoc_attributes' => rendering.doc.attributes.to_json).map {|k, v| {key: k, value: v} }
+      user_password = "#{@username}:#{@password}"
+      headers = {:Authorization => "Basic #{Base64.encode64(user_password)}"}
+
+      if @generate_tags
+        missing_tags = rendering.tags.select { |tag| @all_tags_by_name[tag.downcase].nil? }
+        puts "Found missing tags: #{missing_tags.inspect}" if !missing_tags.empty?
+        missing_tags.each do |tag|
+          content = {
+            name: tag,
+            slug: tag.downcase
+          }
+          response = RestClient.post "#{@hostname}/wp-json/wp/v2/tags", content, headers
+          @all_tags_by_name[slug] = response
+        end
+      end
+
       content = {
                   date: Time.now.strftime("%Y-%m-%dT%H:%M:%S%:z"),
                   slug: slug,
                   title: title,
                   content: html,
                   status:   @options[:post_status] || 'draft',
-                  meta: custom_fields_array
+                  adoc_attributes: rendering.doc.attributes.to_json
                 }
 
+      puts "Adding tags to post body: #{rendering.tags.inspect}"
       content[:tags] = rendering.tags.map { |slug| @all_tags_by_name[slug.downcase]["id"] } if @generate_tags
-
-      user_password = "#{@username}:#{@password}"
-      headers = {:Authorization => "Basic #{Base64.encode64(user_password)}"}
 
       if page = @all_pages_by_slug[slug]
         if page['custom_fields']
@@ -210,10 +223,14 @@ module AsciiPress
 
         post_id = page['id'].to_i
 
-        log :info, "Editing Post ##{post_id} on _#{@hostname}_ custom-field #{content[:meta].inspect}"
+        log :info, "Editing Post ##{post_id} on _#{@hostname}_ custom-field #{rendering.doc.attributes.to_json}"
 
         uri = "#{@hostname}/wp-json/wp/v2/#{@post_type}/#{post_id}"
-        RestClient.post uri, content, headers
+        begin
+          RestClient.post uri, content, headers
+        rescue RestClient::InternalServerError => e
+          puts e.inspect
+        end
       else
         log :info, "Making a new post for '#{title}' on _#{@hostname}_"
 
