@@ -197,7 +197,7 @@ module AsciiPress
             slug: tag.downcase
           }
           response = RestClient.post "#{@hostname}/wp-json/wp/v2/tags", content, headers
-          @all_tags_by_name[slug] = response
+          @all_tags_by_name[tag.downcase] = response
         end
       end
 
