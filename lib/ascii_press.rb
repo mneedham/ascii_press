@@ -394,7 +394,7 @@ module AsciiPress
     'Cannot start with `-` or `_`' => -> (slug) { !%w(- _).include?(slug[0]) },
     'Cannot end with `-` or `_`' => -> (slug) { !%w(- _).include?(slug[-1]) },
     'Cannot have multiple `-` in a row' => -> (slug) { !slug.match(/--/) },
-    'Must only contain letters, numbers, hyphens, and underscores' => -> (slug) { !!slug.match(/^[a-z0-9\-\_]+$/) },
+    'Must only contain lowercase letters, numbers, hyphens, and underscores' => -> (slug) { !!slug.match(/^[a-z0-9\-\_]+$/) },
   }
 
   def self.slug_valid?(slug, rules = DEFAULT_SLUG_RULES)
